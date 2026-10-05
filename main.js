@@ -58,19 +58,35 @@ function wouldWin(board, id, cell) {
   return !!findWinLine(b);
 }
 
+// 斜め上から見た立体のコマ。高さの違いがひと目でわかるように、背の高さをはっきり変える。
 function pieceSVG(id, size) {
   const dark = id & 1;
   const tall = !((id >> 1) & 1);
   const round = !((id >> 2) & 1);
   const hollow = (id >> 3) & 1;
-  const fill = dark ? '#2a2724' : '#f4f1ea';
-  const stroke = dark ? '#17140f' : '#b9ad9a';
-  const r = tall ? 42 : 30;
-  const shape = round
-    ? `<circle cx="50" cy="50" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="3"/>`
-    : `<rect x="${50 - r}" y="${50 - r}" width="${r * 2}" height="${r * 2}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="3"/>`;
-  const hole = hollow ? `<circle cx="50" cy="50" r="${r * 0.4}" fill="var(--bg)"/>` : '';
-  return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true">${shape}${hole}</svg>`;
+  const [top, left, right, line] = dark
+    ? ['#6b5340', '#4f3c2c', '#3b2c20', '#1e1610']
+    : ['#fbf5e8', '#eadcc0', '#cdbb98', '#8a7a5e'];
+  const r = 26;
+  const h = tall ? 66 : 30;
+  const st = `stroke="${line}" stroke-width="2" stroke-linejoin="round"`;
+  let body;
+  if (round) {
+    const k = 10, by = 106, ty = by - h;
+    body = `<path d="M${50 - r} ${ty}V${by}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}Z" fill="${left}" ${st}/>`
+      + `<path d="M50 ${ty}V${by + k}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}Z" fill="${right}"/>`
+      + `<path d="M${50 - r} ${ty}V${by}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}" fill="none" ${st}/>`
+      + `<ellipse cx="50" cy="${ty}" rx="${r}" ry="${k}" fill="${top}" ${st}/>`
+      + (hollow ? `<ellipse cx="50" cy="${ty}" rx="${r * 0.45}" ry="${k * 0.45}" fill="rgba(0,0,0,.45)"/>` : '');
+  } else {
+    const k = 13, ty = 116 - k - h;
+    const pt = (x, y) => `${x} ${y}`;
+    body = `<path d="M${pt(50 - r, ty)}L${pt(50, ty + k)}V${ty + k + h}L${pt(50 - r, ty + h)}Z" fill="${left}" ${st}/>`
+      + `<path d="M${pt(50, ty + k)}L${pt(50 + r, ty)}V${ty + h}L${pt(50, ty + k + h)}Z" fill="${right}" ${st}/>`
+      + `<path d="M${pt(50 - r, ty)}L${pt(50, ty + k)}L${pt(50 + r, ty)}L${pt(50, ty - k)}Z" fill="${top}" ${st}/>`
+      + (hollow ? `<path d="M${pt(50 - r * 0.45, ty)}L${pt(50, ty + k * 0.45)}L${pt(50 + r * 0.45, ty)}L${pt(50, ty - k * 0.45)}Z" fill="rgba(0,0,0,.45)"/>` : '');
+  }
+  return `<svg viewBox="0 0 100 120" width="${size}" height="${size * 1.2}" aria-hidden="true">${body}</svg>`;
 }
 
 let G = null; // 対局中の状態。null ならタイトル（モード選択）画面
@@ -180,7 +196,7 @@ function gameHTML() {
     <div class="game">
       <p class="status">${status}</p>
       ${given}
-      <div class="board">${cells}</div>
+      <div class="board-wrap"><div class="board">${cells}</div></div>
       <div class="tray">${tray}</div>
       ${again}
     </div>`;

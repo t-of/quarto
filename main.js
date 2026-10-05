@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // localStorage はほかのアプリと共有される（同じ t-of.github.io のため）。
 // キーは必ず 'quarto.' で始める。
@@ -78,14 +80,16 @@ function pieceSVG(id, size) {
       + `<path d="M50 ${ty}V${by + k}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}Z" fill="${right}"/>`
       + `<path d="M${50 - r} ${ty}V${by}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}" fill="none" ${st}/>`
       + `<ellipse cx="50" cy="${ty}" rx="${r}" ry="${k}" fill="${top}" ${st}/>`
-      + (hollow ? `<ellipse cx="50" cy="${ty}" rx="${r * 0.45}" ry="${k * 0.45}" fill="rgba(0,0,0,.45)"/>` : '');
+      + (hollow ? `<ellipse cx="50" cy="${ty}" rx="${r * 0.45}" ry="${k * 0.45}" fill="${right}" stroke="${line}" stroke-width="1.5"/>`
+        + `<ellipse cx="50" cy="${ty + k * 0.12}" rx="${r * 0.36}" ry="${k * 0.3}" fill="${left}"/>` : ''); // 溝：奥の壁と底
   } else {
     const k = 13, ty = 116 - k - h;
     const pt = (x, y) => `${x} ${y}`;
     body = `<path d="M${pt(50 - r, ty)}L${pt(50, ty + k)}V${ty + k + h}L${pt(50 - r, ty + h)}Z" fill="${left}" ${st}/>`
       + `<path d="M${pt(50, ty + k)}L${pt(50 + r, ty)}V${ty + h}L${pt(50, ty + k + h)}Z" fill="${right}" ${st}/>`
       + `<path d="M${pt(50 - r, ty)}L${pt(50, ty + k)}L${pt(50 + r, ty)}L${pt(50, ty - k)}Z" fill="${top}" ${st}/>`
-      + (hollow ? `<path d="M${pt(50 - r * 0.45, ty)}L${pt(50, ty + k * 0.45)}L${pt(50 + r * 0.45, ty)}L${pt(50, ty - k * 0.45)}Z" fill="rgba(0,0,0,.45)"/>` : '');
+      + (hollow ? `<path d="M${pt(50 - r * 0.45, ty)}L${pt(50, ty + k * 0.45)}L${pt(50 + r * 0.45, ty)}L${pt(50, ty - k * 0.45)}Z" fill="${right}" stroke="${line}" stroke-width="1.5"/>`
+        + `<path d="M${pt(50 - r * 0.33, ty + k * 0.12)}L${pt(50, ty + k * 0.45)}L${pt(50 + r * 0.33, ty + k * 0.12)}L${pt(50, ty - k * 0.2)}Z" fill="${left}"/>` : ''); // 溝：奥の壁と底
   }
   return `<svg viewBox="0 0 100 120" width="${size}" height="${size * 1.2}" aria-hidden="true">${body}</svg>`;
 }
@@ -154,8 +158,9 @@ canvas.className = 'board3d__canvas';
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 camera.position.set(0, 6, 5.6);
 const controls = new OrbitControls(camera, canvas);
@@ -167,33 +172,96 @@ controls.target.set(0, 0.3, 0);
 controls.update();
 controls.addEventListener('change', draw);
 
-scene.add(new THREE.HemisphereLight(0xfff4e0, 0x3a2e24, 1.3));
-const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+// 影は付けない。環境光（RoomEnvironment）と弱い向きの光で質感を出す
+scene.add(new THREE.HemisphereLight(0xfff4e0, 0x3a2e24, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
 sun.position.set(3, 8, 4);
-sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 });
 scene.add(sun);
 
-const slab = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.3, 4.6), new THREE.MeshStandardMaterial({ color: 0x5a4636, roughness: 0.8 }));
-slab.position.y = -0.15;
-slab.receiveShadow = true;
-scene.add(slab);
+// 木目（灰色の濃淡）。色はマテリアルの color で付ける。上下・左右につながるように周期を整数にする
+function woodTexture() {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const t = (y + 9 * Math.sin((2 * Math.PI * x) / S * 2) + 3 * Math.sin((2 * Math.PI * x) / S * 7)) / S;
+      const ring = Math.pow(0.5 + 0.5 * Math.sin(2 * Math.PI * t * 14), 6);
+      const v = 255 * (0.9 - 0.16 * ring + (Math.random() - 0.5) * 0.05);
+      const p = (y * S + x) * 4;
+      img.data[p] = img.data[p + 1] = img.data[p + 2] = v;
+      img.data[p + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+const GRAIN = woodTexture();
+const wood = (color, o = {}) => new THREE.MeshPhysicalMaterial({
+  color, map: GRAIN, roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.35, envMapIntensity: 0.7, side: THREE.DoubleSide, ...o,
+});
 
-const CELL_COLOR = { base: 0x3e3026, open: 0x9c7a2e, win: 0xffd35c };
-const cellGeo = new THREE.CircleGeometry(0.44, 40);
+const board = new THREE.Mesh(new RoundedBoxGeometry(4.8, 0.36, 4.8, 4, 0.14), wood(0x6a4329, { clearcoat: 0.5 }));
+board.position.y = -0.18;
+scene.add(board);
+
+const CELL_COLOR = { base: 0x4a2e1c, open: 0xb08a3a, win: 0xffd35c };
+const cellGeo = new THREE.CircleGeometry(0.42, 48);
+const grooveGeo = new THREE.RingGeometry(0.42, 0.47, 48);
+const GROOVE = new THREE.MeshStandardMaterial({ color: 0x24160d, roughness: 0.9 });
 const cellMeshes = [...Array(16).keys()].map((i) => {
-  const m = new THREE.Mesh(cellGeo, new THREE.MeshStandardMaterial({ color: CELL_COLOR.base, roughness: 0.9 }));
+  const m = new THREE.Mesh(cellGeo, wood(CELL_COLOR.base, { roughness: 0.7, clearcoat: 0 }));
   m.rotation.x = -Math.PI / 2;
-  m.position.set((i % 4) - 1.5, 0.005, Math.floor(i / 4) - 1.5);
-  m.receiveShadow = true;
+  m.position.set((i % 4) - 1.5, 0.004, Math.floor(i / 4) - 1.5);
   m.userData.cell = i;
-  scene.add(m);
+  const ring = new THREE.Mesh(grooveGeo, GROOVE);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(m.position.x, 0.003, m.position.z);
+  scene.add(m, ring);
   return m;
 });
 
-const WOOD = [0xeadcc0, 0x4f3c2c].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.6 }));
-const HOLE = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 });
+const WOOD = [wood(0xead3a8), wood(0x5a3820)];
+const WOOD_IN = [wood(0x9c8461, { clearcoat: 0 }), wood(0x2e1c10, { clearcoat: 0 })]; // 溝の底は少し暗く
+const HOLE_D = 0.12; // 溝の深さ
+
+// 丸いコマ：断面を回して作る。角は小さく丸め、くぼみは本当に掘る
+function roundGeo(h, hollow) {
+  const R = 0.34, b = 0.04, rh = 0.15, e = 0.02;
+  const pts = [new THREE.Vector2(0, 0)];
+  const arc = (cx, cy, r, a0, a1) => { for (let k = 0; k <= 4; k++) { const a = a0 + ((a1 - a0) * k) / 4; pts.push(new THREE.Vector2(cx + r * Math.cos(a), cy + r * Math.sin(a))); } };
+  arc(R - b, b, b, -Math.PI / 2, 0);
+  arc(R - b, h - b, b, 0, Math.PI / 2);
+  if (hollow) { arc(rh + e, h - e, e, Math.PI / 2, Math.PI); pts.push(new THREE.Vector2(rh, h - HOLE_D)); }
+  else pts.push(new THREE.Vector2(0, h));
+  return new THREE.LatheGeometry(pts, 56);
+}
+// 四角いコマ：角を丸めた四角を押し出し、ふちを面取りする
+function roundRect(half, r) {
+  const s = new THREE.Shape();
+  s.moveTo(-half + r, -half);
+  s.lineTo(half - r, -half); s.quadraticCurveTo(half, -half, half, -half + r);
+  s.lineTo(half, half - r); s.quadraticCurveTo(half, half, half - r, half);
+  s.lineTo(-half + r, half); s.quadraticCurveTo(-half, half, -half, half - r);
+  s.lineTo(-half, -half + r); s.quadraticCurveTo(-half, -half, -half + r, -half);
+  return s;
+}
+function squareGeo(h, hollow) {
+  const bv = 0.035;
+  const shape = roundRect(0.3 - bv, 0.05);
+  if (hollow) shape.holes.push(roundRect(0.13 + bv, 0.03));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: h - 2 * bv, bevelEnabled: true, bevelThickness: bv, bevelSize: bv, bevelSegments: 3, curveSegments: 6 });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, bv, 0);
+  return geo;
+}
+
 function pieceMesh(id) {
   const dark = id & 1;
   const tall = !((id >> 1) & 1);
@@ -201,15 +269,12 @@ function pieceMesh(id) {
   const hollow = (id >> 3) & 1;
   const h = tall ? 1.1 : 0.55;
   const g = new THREE.Group();
-  const body = new THREE.Mesh(round ? new THREE.CylinderGeometry(0.34, 0.34, h, 40) : new THREE.BoxGeometry(0.6, h, 0.6), WOOD[dark]);
-  body.position.y = h / 2;
-  body.castShadow = body.receiveShadow = true;
-  g.add(body);
-  if (hollow) { // 上の面のくぼみ
-    const hole = new THREE.Mesh(round ? new THREE.CircleGeometry(0.15, 32) : new THREE.PlaneGeometry(0.26, 0.26), HOLE);
-    hole.rotation.x = -Math.PI / 2;
-    hole.position.y = h + 0.002;
-    g.add(hole);
+  g.add(new THREE.Mesh(round ? roundGeo(h, hollow) : squareGeo(h, hollow), WOOD[dark]));
+  if (hollow) { // 溝の底
+    const floor = new THREE.Mesh(round ? new THREE.CircleGeometry(0.15, 40) : new THREE.ShapeGeometry(roundRect(0.13, 0.03)), WOOD_IN[dark]);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = h - HOLE_D;
+    g.add(floor);
   }
   return g;
 }
@@ -240,6 +305,8 @@ new ResizeObserver(() => {
   if (!w || !h) return;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
+  // 縦長の画面でも盤の横が切れないように、縦の画角を広げる
+  camera.fov = w < h ? (2 * Math.atan(Math.tan((19 * Math.PI) / 180) * (h / w)) * 180) / Math.PI : 38;
   camera.updateProjectionMatrix();
   draw();
 }).observe(canvas);

@@ -64,39 +64,8 @@ button { font: inherit; color: inherit; }
 
 .given { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 
-/* 盤を手前に傾け、コマだけ起こして立たせる（高さが見えるように） */
-.board-wrap { width: 100%; perspective: 900px; padding-top: 28px; }
-.board {
-  transform: rotateX(38deg);
-  transform-style: preserve-3d;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  background: #5a4636;
-  box-shadow: 0 0 0 3px #3e3026;
-  border-radius: 10px;
-  padding: 4px;
-}
-.cell {
-  display: grid;
-  place-items: end center;
-  transform-style: preserve-3d;
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 50%;
-}
-.cell svg {
-  width: 88%;
-  height: auto;
-  margin-bottom: 6%;
-  transform: rotateX(-38deg);
-  transform-origin: 50% 100%;
-  pointer-events: none;   /* 前の列の背の高いコマが、奥のマスのタップを邪魔しない */
-}
-.cell--open { background: rgba(255, 211, 92, 0.22); cursor: pointer; }
-.cell--open:active { background: rgba(255, 211, 92, 0.32); }
-.cell--win { background: rgba(255, 211, 92, 0.5); }
+.board3d { width: 100%; aspect-ratio: 1 / 1; }
+.board3d__canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 
 .tray {
   display: grid;

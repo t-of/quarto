@@ -56,39 +56,6 @@ function findWinLine(board) {
   return LINES.find((line) => lineWins(board, line)) || null;
 }
 
-// 斜め上から見た立体のコマ。高さの違いがひと目でわかるように、背の高さをはっきり変える。
-function pieceSVG(id, size) {
-  const dark = id & 1;
-  const tall = !((id >> 1) & 1);
-  const round = !((id >> 2) & 1);
-  const hollow = (id >> 3) & 1;
-  const [top, left, right, line] = dark
-    ? ['#6b5340', '#4f3c2c', '#3b2c20', '#1e1610']
-    : ['#fbf5e8', '#eadcc0', '#cdbb98', '#8a7a5e'];
-  const r = 26;
-  const h = tall ? 66 : 30;
-  const st = `stroke="${line}" stroke-width="2" stroke-linejoin="round"`;
-  let body;
-  if (round) {
-    const k = 10, by = 106, ty = by - h;
-    body = `<path d="M${50 - r} ${ty}V${by}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}Z" fill="${left}" ${st}/>`
-      + `<path d="M50 ${ty}V${by + k}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}Z" fill="${right}"/>`
-      + `<path d="M${50 - r} ${ty}V${by}A${r} ${k} 0 0 0 ${50 + r} ${by}V${ty}" fill="none" ${st}/>`
-      + `<ellipse cx="50" cy="${ty}" rx="${r}" ry="${k}" fill="${top}" ${st}/>`
-      + (hollow ? `<ellipse cx="50" cy="${ty}" rx="${r * 0.45}" ry="${k * 0.45}" fill="${right}" stroke="${line}" stroke-width="1.5"/>`
-        + `<ellipse cx="50" cy="${ty + k * 0.12}" rx="${r * 0.36}" ry="${k * 0.3}" fill="${left}"/>` : ''); // 溝：奥の壁と底
-  } else {
-    const k = 13, ty = 116 - k - h;
-    const pt = (x, y) => `${x} ${y}`;
-    body = `<path d="M${pt(50 - r, ty)}L${pt(50, ty + k)}V${ty + k + h}L${pt(50 - r, ty + h)}Z" fill="${left}" ${st}/>`
-      + `<path d="M${pt(50, ty + k)}L${pt(50 + r, ty)}V${ty + h}L${pt(50, ty + k + h)}Z" fill="${right}" ${st}/>`
-      + `<path d="M${pt(50 - r, ty)}L${pt(50, ty + k)}L${pt(50 + r, ty)}L${pt(50, ty - k)}Z" fill="${top}" ${st}/>`
-      + (hollow ? `<path d="M${pt(50 - r * 0.45, ty)}L${pt(50, ty + k * 0.45)}L${pt(50 + r * 0.45, ty)}L${pt(50, ty - k * 0.45)}Z" fill="${right}" stroke="${line}" stroke-width="1.5"/>`
-        + `<path d="M${pt(50 - r * 0.33, ty + k * 0.12)}L${pt(50, ty + k * 0.45)}L${pt(50 + r * 0.33, ty + k * 0.12)}L${pt(50, ty - k * 0.2)}Z" fill="${left}"/>` : ''); // 溝：奥の壁と底
-  }
-  return `<svg viewBox="0 0 100 120" width="${size}" height="${size * 1.2}" aria-hidden="true">${body}</svg>`;
-}
-
 let G = null; // 対局中の状態。null ならタイトル（モード選択）画面
 
 function newGame(mode) {
@@ -150,9 +117,6 @@ function maybeCpuTurn() {
   };
   cpu.postMessage({ id, board: G.board, hand: G.phase === 'place' ? G.given : null, timeMs: 1500 });
 }
-function remainingPieces() {
-  return [...Array(16).keys()].filter((id) => !G.placed.has(id) && id !== G.given);
-}
 
 // ---- 3D の盤（three.js）。ドラッグで回す、ピンチで寄る ----
 const canvas = document.createElement('canvas');
@@ -164,11 +128,11 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-camera.position.set(0, 6, 5.6);
+camera.position.set(0, 8, 7.5);
 const controls = new OrbitControls(camera, canvas);
 controls.enablePan = false;
 controls.minDistance = 4;
-controls.maxDistance = 14;
+controls.maxDistance = 18;
 controls.maxPolarAngle = Math.PI / 2 - 0.05; // 盤の下にはもぐらない
 controls.target.set(0, 0.3, 0);
 controls.update();
@@ -209,7 +173,7 @@ const wood = (color, o = {}) => new THREE.MeshPhysicalMaterial({
   color, map: GRAIN, roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.35, envMapIntensity: 0.7, side: THREE.DoubleSide, ...o,
 });
 
-const board = new THREE.Mesh(new RoundedBoxGeometry(4.8, 0.36, 4.8, 4, 0.14), wood(0x6a4329, { clearcoat: 0.5 }));
+const board = new THREE.Mesh(new RoundedBoxGeometry(6.6, 0.36, 6.6, 4, 0.14), wood(0x6a4329, { clearcoat: 0.5 }));
 board.position.y = -0.18;
 scene.add(board);
 
@@ -281,23 +245,35 @@ function pieceMesh(id) {
   return g;
 }
 
-const pieceMeshes = new Map(); // マス番号 → コマ
+// コマは 16 個とも最初から盤に出しておく。まだ置いていないコマは盤のふちの決まった場所に並ぶ
+function homePos(id) {
+  const k = (id & 3) - 1.5, d = 2.75;
+  return [[k, d], [d, -k], [-k, -d], [-d, k]][id >> 2];
+}
+const pieces = [...Array(16).keys()].map((id) => {
+  const m = pieceMesh(id);
+  m.traverse((o) => { o.userData.piece = id; });
+  scene.add(m);
+  return m;
+});
+// 渡されたコマの足もとの印
+const givenMark = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.46, 48), new THREE.MeshBasicMaterial({ color: CELL_COLOR.win }));
+givenMark.rotation.x = -Math.PI / 2;
+scene.add(givenMark);
+const LIFT = 0.35; // 渡されたコマは持ち上げて見せる
+
 // ホーム画面に飾る盤面
 const DEMO_BOARD = Array(16).fill(null);
 [[0, 5], [5, 10], [6, 3], [9, 14], [10, 0], [15, 9]].forEach(([cell, id]) => { DEMO_BOARD[cell] = id; });
 function syncScene() {
-  (G ? G.board : DEMO_BOARD).forEach((id, i) => {
-    if (id != null && !pieceMeshes.has(i)) {
-      const m = pieceMesh(id);
-      m.position.set(cellMeshes[i].position.x, 0, cellMeshes[i].position.z);
-      m.traverse((o) => { o.userData.cell = i; });
-      scene.add(m);
-      pieceMeshes.set(i, m);
-    } else if (id == null && pieceMeshes.has(i)) {
-      scene.remove(pieceMeshes.get(i));
-      pieceMeshes.delete(i);
-    }
+  const bd = G ? G.board : DEMO_BOARD;
+  pieces.forEach((m, id) => {
+    const cell = bd.indexOf(id);
+    if (cell >= 0) m.position.set(cellMeshes[cell].position.x, 0, cellMeshes[cell].position.z);
+    else { const [x, z] = homePos(id); m.position.set(x, G && G.given === id ? LIFT : 0, z); }
   });
+  givenMark.visible = !!G && G.given != null;
+  if (givenMark.visible) { const [x, z] = homePos(G.given); givenMark.position.set(x, 0.004, z); }
   const open = G && canPlace();
   cellMeshes.forEach((m, i) => m.material.color.setHex(
     G && G.winLine && G.winLine.includes(i) ? CELL_COLOR.win : open && G.board[i] == null ? CELL_COLOR.open : CELL_COLOR.base));
@@ -322,12 +298,16 @@ canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY];
 canvas.addEventListener('pointerup', (e) => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
   downAt = null;
-  if (!G || !canPlace()) return;
+  if (!G || !isInteractive()) return;
   const r = canvas.getBoundingClientRect();
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-  const hit = ray.intersectObjects([...cellMeshes, ...pieceMeshes.values()], true)[0];
-  if (hit && G.board[hit.object.userData.cell] == null) placePiece(hit.object.userData.cell);
+  const hit = ray.intersectObjects([...cellMeshes, ...pieces], true)[0];
+  if (!hit) return;
+  const id = hit.object.userData.piece;
+  if (id != null && !G.placed.has(id) && id !== G.given) { if (G.phase === 'give') givePiece(id); return; }
+  const cell = id != null ? G.board.indexOf(id) : hit.object.userData.cell;
+  if (canPlace() && cell >= 0 && G.board[cell] == null) placePiece(cell);
 });
 
 function isCpu(p) { return G.mode === 'watch' || (G.mode === 'cpu' && p === 2); }
@@ -359,17 +339,10 @@ function bindTitle() {
 }
 
 function gameHTML() {
-  const interactive = isInteractive();
   let status;
   if (G.winner) status = G.winner === 'draw' ? '引き分け' : `${playerLabel(G.winner)} の勝ち！`;
-  else if (G.phase === 'give') status = `${playerLabel(G.turn)} の番：相手に渡すコマを選ぶ`;
+  else if (G.phase === 'give') status = `${playerLabel(G.turn)} の番：相手に渡すコマを盤のふちから選ぶ`;
   else status = `${playerLabel(G.turn)} の番：渡されたコマを置く`;
-
-  const canGive = interactive && G.phase === 'give';
-  const tray = remainingPieces().map((id) => `<button class="piece-btn${canGive ? '' : ' piece-btn--off'}" data-piece="${id}" ${canGive ? '' : 'disabled'}>${pieceSVG(id, 32)}</button>`).join('');
-
-  // 枠はいつも置いておく（出たり消えたりすると盤の大きさが変わるため）
-  const given = `<div class="given">${G.given != null ? `<span>渡されたコマ</span>${pieceSVG(G.given, 40)}` : ''}</div>`;
 
   const again = G.winner ? `
     <div class="result">
@@ -380,16 +353,13 @@ function gameHTML() {
     <div class="game">
       <div class="game__top"><button class="pill" data-title>← ホーム</button></div>
       <p class="status">${status}</p>
-      ${given}
       <div class="board3d" id="board3d"></div>
       <p class="hint">ドラッグで回す・ピンチで寄る</p>
-      <div class="tray">${tray}</div>
       ${again}
     </div>`;
 }
 
 function bindGame() {
-  document.querySelectorAll('.piece-btn:not(.piece-btn--off)').forEach((b) => b.addEventListener('click', () => givePiece(Number(b.dataset.piece))));
   const again = document.querySelector('[data-again]');
   if (again) again.addEventListener('click', () => newGame(G.mode));
   const title = document.querySelector('[data-title]');

@@ -55,11 +55,6 @@ function lineWins(board, line) {
 function findWinLine(board) {
   return LINES.find((line) => lineWins(board, line)) || null;
 }
-function wouldWin(board, id, cell) {
-  const b = board.slice();
-  b[cell] = id;
-  return !!findWinLine(b);
-}
 
 // 斜め上から見た立体のコマ。高さの違いがひと目でわかるように、背の高さをはっきり変える。
 function pieceSVG(id, size) {
@@ -97,6 +92,7 @@ function pieceSVG(id, size) {
 let G = null; // 対局中の状態。null ならタイトル（モード選択）画面
 
 function newGame(mode) {
+  cpuNextGive = null;
   G = { mode, board: Array(16).fill(null), placed: new Set(), given: null, turn: 1, phase: 'give', winner: null, winLine: null };
   render();
   maybeCpuTurn();
@@ -128,28 +124,32 @@ function placePiece(cell) {
   maybeCpuTurn();
 }
 
-// ---- CPU（素直な手: 置けば勝てるなら置く／相手が勝てるコマは渡さない） ----
+// ---- CPU（ai.js を Worker で動かす。置く手と渡すコマを一度に決め、渡すほうは次の手番まで取っておく） ----
+const cpu = new Worker('./ai.js', { type: 'module' });
+let cpuAsk = 0; // 対局をやり直したあとに、前の局の答えが届いても使わない
+let cpuNextGive = null;
 function maybeCpuTurn() {
   if (!G || G.mode !== 'cpu' || G.turn !== 2 || G.winner) return;
-  setTimeout(() => { if (G.phase === 'place') cpuPlace(); else cpuGive(); }, 400);
-}
-function emptyCells() {
-  return G.board.map((v, i) => (v == null ? i : null)).filter((i) => i != null);
+  if (G.phase === 'give' && cpuNextGive != null) {
+    const id = cpuNextGive;
+    cpuNextGive = null;
+    setTimeout(() => givePiece(id), 400);
+    return;
+  }
+  const id = ++cpuAsk;
+  const game = G;
+  const started = performance.now();
+  cpu.onmessage = (e) => {
+    if (e.data.id !== cpuAsk || G !== game) return;
+    setTimeout(() => {
+      if (G !== game) return;
+      if (G.phase === 'place') { cpuNextGive = e.data.give; placePiece(e.data.cell); } else givePiece(e.data.give);
+    }, Math.max(0, 400 - (performance.now() - started)));
+  };
+  cpu.postMessage({ id, board: G.board, hand: G.phase === 'place' ? G.given : null, timeMs: 1500 });
 }
 function remainingPieces() {
   return [...Array(16).keys()].filter((id) => !G.placed.has(id) && id !== G.given);
-}
-function cpuPlace() {
-  const empties = emptyCells();
-  const winCell = empties.find((i) => wouldWin(G.board, G.given, i));
-  placePiece(winCell != null ? winCell : empties[Math.floor(Math.random() * empties.length)]);
-}
-function cpuGive() {
-  const remaining = remainingPieces();
-  const empties = emptyCells();
-  const safe = remaining.filter((id) => !empties.some((i) => wouldWin(G.board, id, i)));
-  const pool = safe.length ? safe : remaining;
-  givePiece(pool[Math.floor(Math.random() * pool.length)]);
 }
 
 // ---- 3D の盤（three.js）。ドラッグで回す、ピンチで寄る ----

@@ -282,8 +282,11 @@ function pieceMesh(id) {
 }
 
 const pieceMeshes = new Map(); // マス番号 → コマ
+// ホーム画面に飾る盤面
+const DEMO_BOARD = Array(16).fill(null);
+[[0, 5], [5, 10], [6, 3], [9, 14], [10, 0], [15, 9]].forEach(([cell, id]) => { DEMO_BOARD[cell] = id; });
 function syncScene() {
-  G.board.forEach((id, i) => {
+  (G ? G.board : DEMO_BOARD).forEach((id, i) => {
     if (id != null && !pieceMeshes.has(i)) {
       const m = pieceMesh(id);
       m.position.set(cellMeshes[i].position.x, 0, cellMeshes[i].position.z);
@@ -295,9 +298,9 @@ function syncScene() {
       pieceMeshes.delete(i);
     }
   });
-  const open = canPlace();
+  const open = G && canPlace();
   cellMeshes.forEach((m, i) => m.material.color.setHex(
-    G.winLine && G.winLine.includes(i) ? CELL_COLOR.win : open && G.board[i] == null ? CELL_COLOR.open : CELL_COLOR.base));
+    G && G.winLine && G.winLine.includes(i) ? CELL_COLOR.win : open && G.board[i] == null ? CELL_COLOR.open : CELL_COLOR.base));
   draw();
 }
 
@@ -334,11 +337,10 @@ function canPlace() { return isInteractive() && G.phase === 'place'; }
 // ---- 画面 ----
 function render() {
   const stage = document.getElementById('stage');
-  if (!G) { stage.innerHTML = titleHTML(); bindTitle(); return; }
-  stage.innerHTML = gameHTML();
+  stage.innerHTML = G ? gameHTML() : titleHTML();
   document.getElementById('board3d').appendChild(canvas);
   syncScene();
-  bindGame();
+  if (G) bindGame(); else bindTitle();
 }
 
 function titleHTML() {
@@ -346,6 +348,7 @@ function titleHTML() {
     <div class="title">
       <h2>クアルト</h2>
       <p class="hint">4 属性のどれか 1 つが縦・横・斜めの 1 列に揃えば勝ち</p>
+      <div class="board3d" id="board3d"></div>
       <button class="pill pill--big" data-start="cpu">CPU と対戦</button>
       <button class="pill pill--big" data-start="2p">2人で対戦（1台で交互）</button>
       <button class="pill pill--big" data-start="watch">CPU 同士の対戦を見る</button>
@@ -365,19 +368,17 @@ function gameHTML() {
   const canGive = interactive && G.phase === 'give';
   const tray = remainingPieces().map((id) => `<button class="piece-btn${canGive ? '' : ' piece-btn--off'}" data-piece="${id}" ${canGive ? '' : 'disabled'}>${pieceSVG(id, 32)}</button>`).join('');
 
-  const given = G.given != null ? `<div class="given"><span>渡されたコマ</span>${pieceSVG(G.given, 40)}</div>` : '';
+  // 枠はいつも置いておく（出たり消えたりすると盤の大きさが変わるため）
+  const given = `<div class="given">${G.given != null ? `<span>渡されたコマ</span>${pieceSVG(G.given, 40)}` : ''}</div>`;
 
   const again = G.winner ? `
     <div class="result">
       <button class="pill pill--big" data-again>もう一度</button>
-      <button class="pill" data-title>モードを選び直す</button>
-    </div>` : G.mode === 'watch' ? `
-    <div class="result">
-      <button class="pill" data-title>見るのをやめる</button>
     </div>` : '';
 
   return `
     <div class="game">
+      <div class="game__top"><button class="pill" data-title>← ホーム</button></div>
       <p class="status">${status}</p>
       ${given}
       <div class="board3d" id="board3d"></div>

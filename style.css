@@ -56,9 +56,10 @@ button { font: inherit; color: inherit; }
 /* 全画面のオーバーレイは opacity ではなく display: none で隠す */
 
 .title, .game { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
-.title { max-width: 340px; }
+.title { height: 100%; min-height: 0; }
 /* 対局中は盤を画面いっぱいに広げる */
 .game { height: 100%; min-height: 0; gap: 6px; }
+.game__top { align-self: flex-start; }
 .title h2 { margin: 0; }
 .hint { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
 
@@ -66,7 +67,7 @@ button { font: inherit; color: inherit; }
 
 .status { margin: 0; font-size: 14px; min-height: 1.4em; text-align: center; }
 
-.given { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.given { height: 48px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 
 .board3d { width: 100%; flex: 1; min-height: 200px; }
 .board3d__canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }

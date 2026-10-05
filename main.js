@@ -101,6 +101,7 @@ function newGame(mode) {
 function playerLabel(p) {
   if (p === 'draw') return '引き分け';
   if (G.mode === 'cpu') return p === 1 ? 'あなた' : 'CPU';
+  if (G.mode === 'watch') return p === 1 ? 'CPU 1' : 'CPU 2';
   return p === 1 ? '1人目' : '2人目';
 }
 
@@ -129,22 +130,23 @@ const cpu = new Worker('./ai.js', { type: 'module' });
 let cpuAsk = 0; // 対局をやり直したあとに、前の局の答えが届いても使わない
 let cpuNextGive = null;
 function maybeCpuTurn() {
-  if (!G || G.mode !== 'cpu' || G.turn !== 2 || G.winner) return;
+  if (!G || !isCpu(G.turn) || G.winner) return;
+  const game = G;
+  const wait = G.mode === 'watch' ? 900 : 400; // 見るだけのときは、目で追えるようにゆっくり
   if (G.phase === 'give' && cpuNextGive != null) {
     const id = cpuNextGive;
     cpuNextGive = null;
-    setTimeout(() => givePiece(id), 400);
+    setTimeout(() => { if (G === game) givePiece(id); }, wait);
     return;
   }
   const id = ++cpuAsk;
-  const game = G;
   const started = performance.now();
   cpu.onmessage = (e) => {
     if (e.data.id !== cpuAsk || G !== game) return;
     setTimeout(() => {
       if (G !== game) return;
       if (G.phase === 'place') { cpuNextGive = e.data.give; placePiece(e.data.cell); } else givePiece(e.data.give);
-    }, Math.max(0, 400 - (performance.now() - started)));
+    }, Math.max(0, wait - (performance.now() - started)));
   };
   cpu.postMessage({ id, board: G.board, hand: G.phase === 'place' ? G.given : null, timeMs: 1500 });
 }
@@ -325,7 +327,8 @@ canvas.addEventListener('pointerup', (e) => {
   if (hit && G.board[hit.object.userData.cell] == null) placePiece(hit.object.userData.cell);
 });
 
-function isInteractive() { return !G.winner && !(G.mode === 'cpu' && G.turn === 2); }
+function isCpu(p) { return G.mode === 'watch' || (G.mode === 'cpu' && p === 2); }
+function isInteractive() { return !G.winner && !isCpu(G.turn); }
 function canPlace() { return isInteractive() && G.phase === 'place'; }
 
 // ---- 画面 ----
@@ -345,6 +348,7 @@ function titleHTML() {
       <p class="hint">4 属性のどれか 1 つが縦・横・斜めの 1 列に揃えば勝ち</p>
       <button class="pill pill--big" data-start="cpu">CPU と対戦</button>
       <button class="pill pill--big" data-start="2p">2人で対戦（1台で交互）</button>
+      <button class="pill pill--big" data-start="watch">CPU 同士の対戦を見る</button>
     </div>`;
 }
 function bindTitle() {
@@ -367,6 +371,9 @@ function gameHTML() {
     <div class="result">
       <button class="pill pill--big" data-again>もう一度</button>
       <button class="pill" data-title>モードを選び直す</button>
+    </div>` : G.mode === 'watch' ? `
+    <div class="result">
+      <button class="pill" data-title>見るのをやめる</button>
     </div>` : '';
 
   return `

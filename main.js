@@ -269,15 +269,52 @@ function syncScene() {
   const bd = G ? G.board : DEMO_BOARD;
   pieces.forEach((m, id) => {
     const cell = bd.indexOf(id);
-    if (cell >= 0) m.position.set(cellMeshes[cell].position.x, 0, cellMeshes[cell].position.z);
-    else { const [x, z] = homePos(id); m.position.set(x, G && G.given === id ? LIFT : 0, z); }
+    if (cell >= 0) moveTo(m, cellMeshes[cell].position.x, 0, cellMeshes[cell].position.z);
+    else { const [x, z] = homePos(id); moveTo(m, x, G && G.given === id ? LIFT : 0, z); }
   });
+  kick();
   givenMark.visible = !!G && G.given != null;
   if (givenMark.visible) { const [x, z] = homePos(G.given); givenMark.position.set(x, 0.004, z); }
   const open = G && canPlace();
   cellMeshes.forEach((m, i) => m.material.color.setHex(
     G && G.winLine && G.winLine.includes(i) ? CELL_COLOR.win : open && G.board[i] == null ? CELL_COLOR.open : CELL_COLOR.base));
   draw();
+}
+
+// ---- 動き。動いているあいだだけ毎フレーム描く ----
+const anims = new Map(); // コマ → { from, to, t0, dur, arc }
+function moveTo(m, x, y, z) {
+  const to = new THREE.Vector3(x, y, z);
+  if (!m.userData.shown) { m.userData.shown = true; m.position.copy(to); return; } // 最初は飛ばさずに置く
+  const a = anims.get(m);
+  if (a ? a.to.distanceTo(to) < 1e-3 : m.position.distanceTo(to) < 1e-3) return;
+  const d = Math.hypot(to.x - m.position.x, to.z - m.position.z);
+  anims.set(m, { from: m.position.clone(), to, t0: performance.now(), dur: Math.min(700, 250 + 120 * d), arc: d > 0.3 ? 0.5 + 0.12 * d : 0 });
+}
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+let raf = 0;
+function kick() { if (!raf) raf = requestAnimationFrame(loop); }
+function loop(now) {
+  anims.forEach((a, m) => {
+    const t = Math.min(1, (now - a.t0) / a.dur);
+    m.position.lerpVectors(a.from, a.to, ease(t));
+    m.position.y += Math.sin(Math.PI * t) * a.arc; // 持ち上げて運び、そっと下ろす
+    if (t === 1) anims.delete(m);
+  });
+  let busy = anims.size > 0;
+  if (G && G.given != null && !anims.has(pieces[G.given])) { // 渡されたコマは手に持っているようにゆれる
+    pieces[G.given].position.y = LIFT + 0.06 * Math.sin(now / 300);
+    busy = true;
+  }
+  if (G && G.winLine) { // 揃った列のコマが跳ねる
+    G.winLine.forEach((c, k) => {
+      const m = pieces[G.board[c]];
+      if (!anims.has(m)) m.position.y = 0.3 * Math.abs(Math.sin(now / 260 - k * 0.5));
+    });
+    busy = true;
+  }
+  draw();
+  raf = busy ? requestAnimationFrame(loop) : 0;
 }
 
 function draw() { renderer.render(scene, camera); }
